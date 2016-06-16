@@ -1,0 +1,194 @@
+/* First Stored Procedure: Let people register for an Org. People could only apply to 3 kind of person type like Member, President, Treasurer */
+
+CREATE PROCEDURE [dbo].[sp_registerPersonForOrg]
+
+@Fname varchar(50),
+
+@Lname varchar(50),
+
+@DateOfBirth datetime,
+
+@PersonType varchar(50),
+
+@Email varchar(100),
+
+@PhoneNum varchar(200),
+
+@OrgName varchar(50)
+
+
+AS 
+
+BEGIN TRAN T1
+
+DECLARE @PersonID INT
+
+DECLARE @FeeID INT
+
+DECLARE @PersonTypeID INT
+
+
+-- the person type are already in Persontype
+
+SET @PersonTypeID = (SELECT PersonType.PersonTypeID FROM PersonType WHERE Name = @PersonType)
+
+--Get PersonID
+
+--If person not exist yet, add person 
+
+SET @PersonID =(SELECT Person.PersonID FROM Person WHERE LastName = @Lname AND FirstName = @Fname)
+	
+IF @PersonID IS NULL
+	
+	BEGIN
+	
+	INSERT INTO Person( LastName, FirstName, DateOfBirth, Email, PhoneNumber, PersonTypeID) 
+	VALUES  (@Lname,@Fname, @DateOfBirth, @Email, @PhoneNum, @personTypeID)
+	
+	SET @PersonID = (SELECT SCOPE_IDENTITY())
+	
+	END
+
+
+--Get FeeID from org 
+-- IF the organization EXITS the feeID  is not null, add the registration
+	
+SET @FeeID = (SELECT FeeID FROM Organization WHERE @OrgName = Organization.Name)
+	
+IF @FeeID IS NOT NULL
+	
+	BEGIN
+		
+	INSERT  INTO Registration (FeeID, PersonID, StartDate, EndDate)
+		
+	VALUES (@FeeID,@PersonID, getDate(), NULL)
+	
+	END
+    
+IF @@error <> 0
+		
+	ROLLBACK TRAN T1
+	
+ELSE
+		
+	COMMIT TRAN T1
+
+
+
+
+
+EXECUTE [dbo].[sp_registerPersonForOrg
+]
+@Fname= 'Chelsea',
+
+@Lname= 'Guo',
+
+@DateOfBirth = '10-06-1995',
+
+@PersonType= 'Member',
+
+@Email= 'Chelsea@hotmail.com',
+
+@PhoneNum ='206387424',
+
+@OrgName ='Cooking club'
+
+=======================================================================================================================
+/* Insert data into OrganzationType ,This is just a procedure to populate Organization type */
+GO
+CREATE  PROCEDURE [dbo].[InsertOrgType]
+	@OrgTypeName varchar(255),
+	@OrgTypeDescription varchar(500)
+AS
+BEGIN 
+IF NOT EXISTS ( SELECT OrganizationType.OrgTypeID FROM OrganizationType WHERE OrgTypeName = @OrgTypeName)
+INSERT INTO OrganizationType (OrgTypeName, OrgTypeDescription )
+VALUES (@OrgTypeName, @OrgTypeDescription)
+END
+
+EXECUTE [dbo].[InsertOrgType]
+	@OrgTypeName = 'Social',
+	@OrgTypeDescription = 'Communicate with others'
+
+EXECUTE [dbo].[InsertOrgType]
+	@OrgTypeName = 'Sport',
+	@OrgTypeDescription = 'Keep Health'
+
+SELECT * FROM OrganizationType
+
+/*Second Stored Procedure: Create procedure to add organization with fee */
+GO
+CREATE PROCEDURE [dbo].[addOrgFee]
+	@OrgName varchar(255), 
+    	@Season varchar(255),
+	@OrgDescription varchar(255),
+	@Capacity int,
+
+	@OrgTypeName varchar(50),
+	@Fee int,
+	@DueDate Datetime
+AS
+  	DECLARE @FeeID INT
+   	DECLARE @OrgTypeID INT
+
+	--Get or create OrgTypeID
+	SET @OrgTypeID =  (SELECT OrganizationType.OrgTypeID FROM OrganizationType WHERE @OrgTypeName = OrgTypeName)
+	BEGIN TRAN T1
+	--Create a unique feeID
+	-- fee id unique for each org
+	INSERT INTO Fee (Amount, DueDate) VALUES (@Fee, @DueDate)
+	SET @FeeID = (SELECT SCOPE_IDENTITY())
+	--Create Org with all Information
+	INSERT INTO Organization (Name,FeeID,OrgTypeID, Season, OrgDescription, Capacity) 
+		VALUES(@OrgName,@FeeID, @OrgTypeID, @Season, @OrgDescription, @Capacity)
+
+    IF @@error <> 0
+		ROLLBACK TRAN T1
+	ELSE
+		COMMIT TRAN T1
+
+
+
+EXECUTE  [dbo].[addOrgFee]
+	@OrgName = 'Tennis club',
+    	@Season = 'All season',
+	@OrgDescription =' Welcome to joining us, if you are a person who loving tennis',
+	@Capacity = 50,
+	@OrgTypeName = 'Sport',
+	@Fee = 0,
+	@DueDate = '12-05-2015'
+EXECUTE  [dbo].[addOrgFee]
+	@OrgName = 'Cooking club',
+    	@Season = 'All season',
+	@OrgDescription =' Welcome to joining us, if you are a person who loving making food',
+	@Capacity = 50,
+	@OrgTypeName = 'Social',
+	@Fee = 50,
+	@DueDate = '12-05-2015'
+=====================================================================================================================
+/*Business Rules: One person could only register the Organization once*/
+CREATE FUNCTION fn_RigistrationOrg (@FirstName varchar(30),  @LastName varchar(30), @OrgName varchar(50))
+RETURNS INT
+AS 
+BEGIN
+ DECLARE @Ret INT = 0
+IF EXISTS ( SELECT  * FROM Person P
+		JOIN Registration R ON R.PersonID = P.PersonID
+		JOIN Fee  F ON R.FeeID = F.FeeID
+		JOIN Organization O ON O.FeeID = F.FeeID
+	WHERE O.Name = @OrgName
+	AND P.Firstname = @FirstName
+	AND P.Lastname = @LastName
+	)
+SET @Ret = 1
+RETURN @Ret
+END
+
+ALTER TABLE Registration
+ADD CONSTRAINT ck_reg
+CHECK(dbo.fn_RegistrationOrg(@FirstName,@LastName, @OrgName) = 0)
+
+DECLARE @ret int = null
+EXEC @ret = dbo.fn_RigistrationOrg @FirstName = 'Chelsea', @LastName = 'Guo', @OrgName = 'Cooking'
+--Returns the result in the message tab.
+PRINT @ret;
